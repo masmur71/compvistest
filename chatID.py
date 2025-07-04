@@ -1,6 +1,8 @@
 import requests
+import os
+from dotenv import load_dotenv
 
-BOT_TOKEN = '7564699981:AAHU_jMSzUHF8VFcU2aWo40QJFWgvKZU2sI'
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 URL = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
 
 # Simpan chat_id yang sudah dikumpulkan

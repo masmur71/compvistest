@@ -42,15 +42,13 @@ TRACKER_CONFIG = {
     'track_high_thresh': 0.5,    # Threshold tinggi untuk deteksi yang confident
     'track_low_thresh': 0.1,     # Threshold rendah untuk mempertahankan track
     'new_track_thresh': 0.6,     # Threshold untuk membuat track baru
-    'track_buffer': 60,          # Buffer frames untuk mempertahankan track
+    'track_buffer': 20,          # Buffer frames untuk mempertahankan track
     'match_thresh': 0.8,         # Threshold untuk matching antara deteksi dan track
     'min_box_area': 10,          # Area minimum bounding box
     'mom': 0.8                   # Momentum untuk update kalman filter
 }
 
-# Dictionary untuk menyimpan track terakhir dan data deteksi
-last_tracks = {}
-track_ages = {}  # Untuk melacak umur setiap track
+# Dictionary untuk menyimpan data deteksi
 counted_ids = set()
 detection_records = []
 
@@ -97,21 +95,6 @@ def kirim_data_ke_api(detection_records):
     except Exception as e:
         logging.error(f"Kesalahan saat mengirim data ke API: {e}")
         return False
-
-# Fungsi untuk memperbarui umur track
-def update_track_ages():
-    """Update umur track dan hapus yang terlalu tua"""
-    current_time = time.time()
-    tracks_to_remove = []
-    
-    for track_id in track_ages:
-        age = current_time - track_ages[track_id]
-        if age > TRACKER_CONFIG['track_buffer']:
-            tracks_to_remove.append(track_id)
-    
-    for track_id in tracks_to_remove:
-        track_ages.pop(track_id)
-        last_tracks.pop(track_id, None)
 
 # Fungsi utama
 def main():
@@ -166,7 +149,6 @@ def main():
                     custom_results = future_custom.result()
                     
                     dosen_count, mahasiswa_count = 0, 0
-                    update_track_ages()
                     
                     for r in custom_results:
                         for box in r.boxes:
@@ -187,15 +169,7 @@ def main():
                             if box_area < TRACKER_CONFIG['min_box_area']:
                                 continue
 
-                            # Update atau tambah track baru
-                            if conf >= TRACKER_CONFIG['new_track_thresh'] or track_id in last_tracks:
-                                last_tracks[track_id] = {
-                                    'coords': (x1, y1, x2, y2),
-                                    'class': cls,
-                                    'conf': conf
-                                }
-                                track_ages[track_id] = current_time
-
+                            # Hitung objek yang terdeteksi dan tampilkan bounding box
                             if cls == 'dosen-staff':
                                 dosen_count += 1
                                 color = (0, 255, 0)  # Hijau untuk dosen
@@ -214,29 +188,17 @@ def main():
                                 if unique_key not in counted_ids and telegram_notifier:
                                     telegram_notifier.notify_detection('mahasiswa')
                             
+                            # Catat deteksi untuk counting
                             unique_key = f"custom_{cls}_{track_id}"
                             if unique_key not in counted_ids:
                                 counted_ids.add(unique_key)
                                 detection_records.append({'type': cls, 'value': 1})
                             
-                            # Gambar bounding box dan label dari model custom
+                            # Gambar bounding box dan label HANYA untuk objek yang terdeteksi
                             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                             label = f'{cls} ID:{track_id} Conf:{conf:.2f}'
                             cv2.putText(frame, label, (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
-                    # Gambar tracks yang disimpan tapi tidak terdeteksi di frame ini
-                    custom_ids = [int(box.id[0]) for r in custom_results for box in r.boxes if box.id is not None]
-                    for track_id, track_info in last_tracks.items():
-                        if track_id not in custom_ids:
-                            x1, y1, x2, y2 = track_info['coords']
-                            cls = track_info['class']
-                            color = (0, 255, 0) if cls == 'dosen-staff' else (255, 0, 0)
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 1)
-                            label = f'{cls} ID:{track_id} (Saved)'
-                            cv2.putText(frame, label, (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-                    
 
                     # 2. Deteksi dengan model bawaan (pretrained) untuk objek selain "person"
                     try:
@@ -261,7 +223,6 @@ def main():
                                 coords = box.xyxy[0].tolist()
                                 x1, y1, x2, y2 = map(int, coords)
                                 
-                                
                                 # Warna kuning untuk deteksi model pretrained
                                 color = (0, 255, 255)
                                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
@@ -269,10 +230,18 @@ def main():
                                 cv2.putText(frame, label, (x1, y1 - 10),
                                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                                 
-                                unique_key = f"pretrained_{cls_name}_{x1}_{y1}"
-                                if unique_key not in counted_ids:
-                                    counted_ids.add(unique_key)
-                                    detection_records.append({'type': cls_name, 'value': 1})
+                                # Catat deteksi pretrained untuk counting
+                                if box.id is not None:
+                                    try:
+                                        track_id = int(box.id[0])
+                                        unique_key = f"pretrained_{cls_name}_{track_id}"
+                                    except (TypeError, AttributeError):
+                                        # Jika tidak ada ID, gunakan koordinat sebagai pengganti
+                                        unique_key = f"pretrained_{cls_name}_{x1}_{y1}"
+                                    
+                                    if unique_key not in counted_ids:
+                                        counted_ids.add(unique_key)
+                                        detection_records.append({'type': cls_name, 'value': 1})
                     except Exception as e:
                         logging.error(f"Kesalahan saat deteksi model pretrained: {e}")
                     

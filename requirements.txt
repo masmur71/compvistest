@@ -1,0 +1,17 @@
+ultralytics==8.3.83
+torch==2.3.1
+torchvision==0.18.1a0
+opencv-python==4.10.0
+onnx==1.17.0
+onnxruntime==1.21.0
+numpy==1.23.5
+pandas==2.2.3
+scipy==1.15.1
+matplotlib==3.10.0
+seaborn==0.13.2
+python-dotenv==1.1.0
+requests==2.32.3
+tqdm==4.67.1
+loguru==0.7.3
+coloredlogs==15.0.1
+filterpy==1.4.5  # digunakan untuk kalman filter di ByteTrack
